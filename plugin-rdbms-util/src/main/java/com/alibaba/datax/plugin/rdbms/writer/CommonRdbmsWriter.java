@@ -274,6 +274,7 @@ public class CommonRdbmsWriter {
 
             List<Record> writeBuffer = new ArrayList<Record>(this.batchSize);
             int bufferBytes = 0;
+            LOG.info("sout: write sql=" + this.writeRecordSql);
             try (PreparedStatement preparedStatement = connection.prepareStatement(this.writeRecordSql)) {
                 Record record;
                 while ((record = recordReceiver.getFromReader()) != null) {
