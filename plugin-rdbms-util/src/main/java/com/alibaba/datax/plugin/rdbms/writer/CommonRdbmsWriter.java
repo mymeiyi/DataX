@@ -274,7 +274,7 @@ public class CommonRdbmsWriter {
 
             List<Record> writeBuffer = new ArrayList<Record>(this.batchSize);
             int bufferBytes = 0;
-            try {
+            try (PreparedStatement preparedStatement = connection.prepareStatement(this.writeRecordSql)) {
                 Record record;
                 while ((record = recordReceiver.getFromReader()) != null) {
                     if (record.getColumnNumber() != this.columnNumber) {
@@ -292,13 +292,13 @@ public class CommonRdbmsWriter {
                     bufferBytes += record.getMemorySize();
 
                     if (writeBuffer.size() >= batchSize || bufferBytes >= batchByteSize) {
-                        doBatchInsert(connection, writeBuffer);
+                        doBatchInsert(connection, preparedStatement, writeBuffer);
                         writeBuffer.clear();
                         bufferBytes = 0;
                     }
                 }
                 if (!writeBuffer.isEmpty()) {
-                    doBatchInsert(connection, writeBuffer);
+                    doBatchInsert(connection, preparedStatement, writeBuffer);
                     writeBuffer.clear();
                     bufferBytes = 0;
                 }
@@ -345,13 +345,10 @@ public class CommonRdbmsWriter {
         public void destroy(Configuration writerSliceConfig) {
         }
 
-        protected void doBatchInsert(Connection connection, List<Record> buffer)
+        protected void doBatchInsert(Connection connection, PreparedStatement preparedStatement, List<Record> buffer)
                 throws SQLException {
-            PreparedStatement preparedStatement = null;
             try {
-                connection.setAutoCommit(false);
-                preparedStatement = connection
-                        .prepareStatement(this.writeRecordSql);
+                // connection.setAutoCommit(false);
 
                 for (Record record : buffer) {
                     preparedStatement = fillPreparedStatement(
@@ -359,16 +356,16 @@ public class CommonRdbmsWriter {
                     preparedStatement.addBatch();
                 }
                 preparedStatement.executeBatch();
-                connection.commit();
+                // connection.commit();
             } catch (SQLException e) {
                 LOG.warn("回滚此次写入, 采用每次写入一行方式提交. 因为:" + e.getMessage());
-                connection.rollback();
+                // connection.rollback();
                 doOneInsert(connection, buffer);
             } catch (Exception e) {
                 throw DataXException.asDataXException(
                         DBUtilErrorCode.WRITE_DATA_ERROR, e);
             } finally {
-                DBUtil.closeDBResources(preparedStatement, null);
+                // DBUtil.closeDBResources(preparedStatement, null);
             }
         }
 

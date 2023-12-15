@@ -10,6 +10,7 @@ import com.alibaba.datax.plugin.rdbms.writer.Key;
 import org.apache.commons.lang3.StringUtils;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
 
@@ -74,11 +75,11 @@ public class AdbMysqlWriter extends Writer {
             }
 
             @Override
-            protected void doBatchInsert(Connection connection, List<Record> buffer)
-                    throws SQLException {
+            protected void doBatchInsert(Connection connection, PreparedStatement preparedStatement,
+                    List<Record> buffer) throws SQLException {
                 long startTime = System.currentTimeMillis();
 
-                super.doBatchInsert(connection, buffer);
+                super.doBatchInsert(connection, preparedStatement, buffer);
 
                 writeCount = writeCount + buffer.size();
                 writeTime = writeTime + (System.currentTimeMillis() - startTime);
