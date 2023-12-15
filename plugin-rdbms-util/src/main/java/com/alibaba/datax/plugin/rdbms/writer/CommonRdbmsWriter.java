@@ -350,7 +350,7 @@ public class CommonRdbmsWriter {
                 throws SQLException {
             try {
                 // connection.setAutoCommit(false);
-
+                LOG.info("sout: rows=" + buffer.size());
                 for (Record record : buffer) {
                     preparedStatement = fillPreparedStatement(
                             preparedStatement, record);
