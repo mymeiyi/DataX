@@ -12,7 +12,6 @@ import com.alibaba.datax.plugin.rdbms.util.DataBaseType;
 import com.alibaba.datax.plugin.rdbms.util.RdbmsException;
 import com.alibaba.datax.plugin.rdbms.writer.util.OriginalConfPretreatmentUtil;
 import com.alibaba.datax.plugin.rdbms.writer.util.WriterUtil;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.tuple.Triple;
 import org.slf4j.Logger;
@@ -24,6 +23,7 @@ import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class CommonRdbmsWriter {
 
@@ -203,6 +203,8 @@ public class CommonRdbmsWriter {
         private int dumpRecordLimit = Constant.DEFAULT_DUMP_RECORD_LIMIT;
         private AtomicLong dumpRecordCount = new AtomicLong(0);
 
+        protected boolean reusePrepared = false;
+
         public Task(DataBaseType dataBaseType) {
             this.dataBaseType = dataBaseType;
         }
@@ -243,6 +245,7 @@ public class CommonRdbmsWriter {
 
             BASIC_MESSAGE = String.format("jdbcUrl:[%s], table:[%s]",
                     this.jdbcUrl, this.table);
+            this.reusePrepared = writerSliceConfig.getBool(Key.REUSE_PREPARED, false);
         }
 
         public void prepare(Configuration writerSliceConfig) {
@@ -274,7 +277,11 @@ public class CommonRdbmsWriter {
 
             List<Record> writeBuffer = new ArrayList<Record>(this.batchSize);
             int bufferBytes = 0;
+            PreparedStatement ps = null;
             try {
+                if(reusePrepared){
+                    ps = connection.prepareStatement(this.writeRecordSql);
+                }
                 Record record;
                 while ((record = recordReceiver.getFromReader()) != null) {
                     if (record.getColumnNumber() != this.columnNumber) {
@@ -292,23 +299,36 @@ public class CommonRdbmsWriter {
                     bufferBytes += record.getMemorySize();
 
                     if (writeBuffer.size() >= batchSize || bufferBytes >= batchByteSize) {
-                        doBatchInsert(connection, writeBuffer);
+                        if(reusePrepared){
+                            doBatchInsert(connection, ps, writeBuffer);
+                        }else {
+                            doBatchInsert(connection, writeBuffer);
+                        }
                         writeBuffer.clear();
                         bufferBytes = 0;
                     }
                 }
                 if (!writeBuffer.isEmpty()) {
-                    doBatchInsert(connection, writeBuffer);
+                    if(reusePrepared){
+                        doBatchInsert(connection, ps, writeBuffer);
+                    }else {
+                        doBatchInsert(connection, writeBuffer);
+                    }
                     writeBuffer.clear();
                     bufferBytes = 0;
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 throw DataXException.asDataXException(
                         DBUtilErrorCode.WRITE_DATA_ERROR, e);
             } finally {
                 writeBuffer.clear();
                 bufferBytes = 0;
-                DBUtil.closeDBResources(null, null, connection);
+                if(reusePrepared){
+                    DBUtil.closeDBResources(null, ps, connection);
+                }else{
+                    DBUtil.closeDBResources(null, null, connection);
+                }
             }
         }
 
@@ -369,6 +389,27 @@ public class CommonRdbmsWriter {
                         DBUtilErrorCode.WRITE_DATA_ERROR, e);
             } finally {
                 DBUtil.closeDBResources(preparedStatement, null);
+            }
+        }
+
+        protected void doBatchInsert(Connection connection, PreparedStatement preparedStatement, List<Record> buffer)
+                throws SQLException {
+            try {
+                connection.setAutoCommit(false);
+                for (Record record : buffer) {
+                    preparedStatement = fillPreparedStatement(
+                            preparedStatement, record);
+                    preparedStatement.addBatch();
+                }
+                preparedStatement.executeBatch();
+                connection.commit();
+            } catch (SQLException e) {
+                LOG.warn("回滚此次写入, 采用每次写入一行方式提交. 因为:" + e.getMessage());
+                connection.rollback();
+                doOneInsert(connection, buffer);
+            } catch (Exception e) {
+                throw DataXException.asDataXException(
+                        DBUtilErrorCode.WRITE_DATA_ERROR, e);
             }
         }
 
