@@ -463,7 +463,7 @@ public class CommonRdbmsWriter {
 
         protected PreparedStatement fillPreparedStatementColumnType(PreparedStatement preparedStatement, int columnIndex,
                                                                     int columnSqltype, String typeName, Column column) throws SQLException {
-            LOG.info("sout: column: {}", column.asString());
+            // LOG.info("sout: column: {}", column.asString());
             java.util.Date utilDate;
             switch (columnSqltype) {
                 case Types.CHAR:
